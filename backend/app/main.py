@@ -3,11 +3,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
 from pathlib import Path
-import subprocess
 import shutil
 import uuid
 import os
 import sys
+
+import torch
+import soundfile as sf
+import numpy as np
+from demucs.pretrained import get_model
+from demucs.apply import apply_model
 
 app = FastAPI(title="Vocal Separation API", version="0.1.0")
 
@@ -30,19 +35,29 @@ app.mount("/files", StaticFiles(directory=str(OUT_DIR)), name="files")
 
 
 def run_demucs_two_stems(input_path: Path, job_dir: Path) -> Path:
-    cmd = [
-        sys.executable,
-        "-m",
-        "demucs",
-        "--two-stems",
-        "vocals",
-        "-o",
-        str(job_dir),
-        str(input_path),
-    ]
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stdout)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    torch.set_num_threads(max(1, torch.get_num_threads()))
+    wav, sr = sf.read(str(input_path), always_2d=True)
+    if sr != 44100:
+        raise RuntimeError(f"Unsupported sample rate {sr}, please upload 44.1kHz WAV/MP3.")
+    x = torch.tensor(wav.T, dtype=torch.float32).unsqueeze(0).to(device)
+    model = get_model("htdemucs").to(device)
+    model.eval()
+    with torch.no_grad():
+        sources = apply_model(model, x, shifts=1, overlap=0.25, split=True, progress=False)[0]
+    names = model.sources
+    src_map = {name: sources[i].cpu().numpy().T for i, name in enumerate(names)}
+    if "vocals" not in src_map:
+        raise RuntimeError("Model output missing vocals stem.")
+    vocals = src_map["vocals"]
+    instrumental = np.zeros_like(vocals)
+    for name, audio in src_map.items():
+        if name != "vocals":
+            instrumental += audio
+    out_vocals = job_dir / "vocals.wav"
+    out_inst = job_dir / "instrumental.wav"
+    sf.write(str(out_vocals), vocals, sr)
+    sf.write(str(out_inst), instrumental, sr)
     return job_dir
 
 
