@@ -103,6 +103,7 @@ async def separate(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Processing failed: {e}") from e
     finally:
         if job_tmp.exists():
+            shutil.rmtree(job_tmp, ignore_errors=True)
 @app.get("/api/status/{job_id}")
 def status(job_id: str):
     job_out = OUT_DIR / job_id
@@ -113,7 +114,7 @@ def status(job_id: str):
     if vocals.exists() and inst.exists():
         return {"job_id": job_id, "status": "done"}
     return {"job_id": job_id, "status": "running"}
-            shutil.rmtree(job_tmp, ignore_errors=True)
+
 
 
 @app.get("/api/health")
