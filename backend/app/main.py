@@ -83,28 +83,10 @@ async def separate(file: UploadFile = File(...)):
 
         run_demucs_two_stems(input_path, job_out)
 
-        vocals_path = None
-        inst_path = None
-        for root, dirs, files in os.walk(job_out):
-            p = Path(root)
-            has_vocals = "vocals.wav" in files
-            inst_candidate = None
-            if "accompaniment.wav" in files:
-                inst_candidate = p / "accompaniment.wav"
-            elif "no_vocals.wav" in files:
-                inst_candidate = p / "no_vocals.wav"
-            if has_vocals and inst_candidate is not None:
-                vocals_path = p / "vocals.wav"
-                inst_path = inst_candidate
-                break
-
-        if not vocals_path or not inst_path:
-            raise RuntimeError("Demucs did not produce expected output files.")
-
         final_vocals = job_out / "vocals.wav"
         final_inst = job_out / "instrumental.wav"
-        shutil.move(str(vocals_path), final_vocals)
-        shutil.move(str(inst_path), final_inst)
+        if not final_vocals.exists() or not final_inst.exists():
+            raise RuntimeError("Separation did not produce expected output files.")
 
         return JSONResponse(
             {
