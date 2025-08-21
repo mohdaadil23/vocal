@@ -9,8 +9,8 @@ import os
 import sys
 
 import torch
-import soundfile as sf
 import numpy as np
+import wave
 from demucs.pretrained import get_model
 from demucs.apply import apply_model
 
@@ -34,12 +34,41 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/files", StaticFiles(directory=str(OUT_DIR)), name="files")
 
 
+def _read_wav_float32_stereo(path: Path):
+    with wave.open(str(path), "rb") as w:
+        n_channels = w.getnchannels()
+        sampwidth = w.getsampwidth()
+        framerate = w.getframerate()
+        n_frames = w.getnframes()
+        if framerate != 44100:
+            raise RuntimeError(f"Unsupported sample rate {framerate}, please upload 44.1kHz WAV.")
+        raw = w.readframes(n_frames)
+    if sampwidth == 2:
+        data = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    elif sampwidth == 4:
+        data = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
+    else:
+        raise RuntimeError(f"Unsupported sample width: {sampwidth*8} bits.")
+    data = data.reshape(-1, n_channels)
+    if n_channels == 1:
+        data = np.repeat(data, 2, axis=1)
+    elif n_channels > 2:
+        data = data[:, :2]
+    return data  # shape (num_samples, 2)
+
+def _write_wav_float32_stereo(path: Path, audio: np.ndarray):
+    audio = np.clip(audio, -1.0, 1.0)
+    pcm = (audio * 32767.0).astype(np.int16)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(44100)
+        w.writeframes(pcm.tobytes())
+
 def run_demucs_two_stems(input_path: Path, job_dir: Path) -> Path:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     torch.set_num_threads(max(1, torch.get_num_threads()))
-    wav, sr = sf.read(str(input_path), always_2d=True)
-    if sr != 44100:
-        raise RuntimeError(f"Unsupported sample rate {sr}, please upload 44.1kHz WAV/MP3.")
+    wav = _read_wav_float32_stereo(input_path)  # (N,2) float32 [-1,1]
     x = torch.tensor(wav.T, dtype=torch.float32).unsqueeze(0).to(device)
     model = get_model("htdemucs").to(device)
     model.eval()
@@ -56,8 +85,8 @@ def run_demucs_two_stems(input_path: Path, job_dir: Path) -> Path:
             instrumental += audio
     out_vocals = job_dir / "vocals.wav"
     out_inst = job_dir / "instrumental.wav"
-    sf.write(str(out_vocals), vocals, sr)
-    sf.write(str(out_inst), instrumental, sr)
+    _write_wav_float32_stereo(out_vocals, vocals)
+    _write_wav_float32_stereo(out_inst, instrumental)
     return job_dir
 
 
@@ -66,8 +95,8 @@ async def separate(file: UploadFile = File(...)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file uploaded.")
     ext = Path(file.filename).suffix.lower()
-    if ext not in [".mp3", ".wav", ".flac", ".m4a", ".ogg"]:
-        raise HTTPException(status_code=400, detail="Unsupported audio format.")
+    if ext not in [".wav"]:
+        raise HTTPException(status_code=400, detail="Only WAV is supported on the deployed server for now. Please upload a 44.1kHz WAV.")
 
     job_id = str(uuid.uuid4())
     job_tmp = TMP_DIR / job_id
