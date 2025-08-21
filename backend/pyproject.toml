@@ -8,8 +8,8 @@ packages = [{ include = "app" }]
 
 [tool.poetry.dependencies]
 python = "^3.12"
-fastapi = "*"
-uvicorn = {extras = ["standard"], version = "*"}
+fastapi = { extras = ["standard"], version = "*" }
+uvicorn = { extras = ["standard"], version = "*" }
 python-multipart = "*"
 aiofiles = "*"
 starlette = "*"
