@@ -1,0 +1,108 @@
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.staticfiles import StaticFiles
+from pathlib import Path
+import subprocess
+import shutil
+import uuid
+import os
+
+app = FastAPI(title="Vocal Separation API", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+TMP_DIR = BASE_DIR / "tmp"
+OUT_DIR = BASE_DIR / "storage"
+
+TMP_DIR.mkdir(parents=True, exist_ok=True)
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+app.mount("/files", StaticFiles(directory=str(OUT_DIR)), name="files")
+
+
+def run_demucs_two_stems(input_path: Path, job_dir: Path) -> Path:
+    cmd = [
+        "python",
+        "-m",
+        "demucs",
+        "--two-stems",
+        "vocals",
+        "-o",
+        str(job_dir),
+        str(input_path),
+    ]
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stdout)
+    return job_dir
+
+
+@app.post("/api/separate")
+async def separate(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded.")
+    ext = Path(file.filename).suffix.lower()
+    if ext not in [".mp3", ".wav", ".flac", ".m4a", ".ogg"]:
+        raise HTTPException(status_code=400, detail="Unsupported audio format.")
+
+    job_id = str(uuid.uuid4())
+    job_tmp = TMP_DIR / job_id
+    job_out = OUT_DIR / job_id
+    job_tmp.mkdir(parents=True, exist_ok=True)
+    job_out.mkdir(parents=True, exist_ok=True)
+
+    input_path = job_tmp / f"input{ext}"
+    try:
+        with open(input_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        run_demucs_two_stems(input_path, job_out)
+
+        vocals_path = None
+        inst_path = None
+        for root, dirs, files in os.walk(job_out):
+            p = Path(root)
+            if "vocals.wav" in files and "accompaniment.wav" in files:
+                vocals_path = p / "vocals.wav"
+                inst_path = p / "accompaniment.wav"
+                break
+
+        if not vocals_path or not inst_path:
+            raise RuntimeError("Demucs did not produce expected output files.")
+
+        public_vocals = f"/files/{job_id}/" + str(vocals_path.relative_to(job_out)).replace("\\", "/")
+        public_inst = f"/files/{job_id}/" + str(inst_path.relative_to(job_out)).replace("\\", "/")
+
+        final_vocals = job_out / "vocals.wav"
+        final_inst = job_out / "instrumental.wav"
+        shutil.move(str(vocals_path), final_vocals)
+        shutil.move(str(inst_path), final_inst)
+
+        return JSONResponse(
+            {
+                "job_id": job_id,
+                "vocals_url": f"/files/{job_id}/vocals.wav",
+                "instrumental_url": f"/files/{job_id}/instrumental.wav",
+            }
+        )
+    except Exception as e:
+        if job_out.exists():
+            shutil.rmtree(job_out, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=f"Processing failed: {e}") from e
+    finally:
+        if job_tmp.exists():
+            shutil.rmtree(job_tmp, ignore_errors=True)
+
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}
