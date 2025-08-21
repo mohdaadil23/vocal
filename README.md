@@ -75,6 +75,13 @@ Temporary upload data is cleaned after each job from `backend/tmp`.
 - Frontend entry: `frontend/src/App.tsx`, `frontend/src/main.tsx`
 - Proxy in development: Vite proxies `/api` and `/files` to `http://localhost:8000`
 
+## Deployment
+
+- Backend deploys as a FastAPI app with Poetry from `backend/` (ASGI app is `app` in `app/main.py`).
+- Frontend must be pointed at the deployed backend URL via Vite env:
+  - Create `frontend/.env` with `VITE_API_BASE=https://your-backend-url` (no trailing slash).
+  - Build with `npm run build` and deploy `frontend/dist`.
+
 ## Credits
 
 - Separation model: [Demucs](https://github.com/facebookresearch/demucs)

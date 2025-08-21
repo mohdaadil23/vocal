@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "vocal-backend"
+version = "0.1.0"
+description = "FastAPI backend for vocal separation using Demucs"
+authors = ["Devin AI <devin-ai-integration[bot]@users.noreply.github.com>"]
+readme = "README.md"
+packages = [{ include = "app" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "*"
+uvicorn = {extras = ["standard"], version = "*"}
+python-multipart = "*"
+aiofiles = "*"
+starlette = "*"
+demucs = "*"
+torch = "*"
+soundfile = "*"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

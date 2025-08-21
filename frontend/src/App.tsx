@@ -6,6 +6,8 @@ type Result = {
   instrumental_url: string;
 };
 
+const apiBase = (import.meta as any).env?.VITE_API_BASE || "";
+
 export default function App() {
   const [dragOver, setDragOver] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -30,6 +32,8 @@ export default function App() {
     }
   };
 
+  const toAbs = (url: string) => (url.startsWith("/") ? `${apiBase}${url}` : url);
+
   const uploadFile = async (file: File) => {
     setError(null);
     setResult(null);
@@ -38,16 +42,20 @@ export default function App() {
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch("/api/separate", {
+      const res = await fetch(`${apiBase}/api/separate`, {
         method: "POST",
         body: form
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || `Upload failed (${res.status})`);
+        throw new Error((data as any).detail || `Upload failed (${res.status})`);
       }
       const data = (await res.json()) as Result;
-      setResult(data);
+      setResult({
+        job_id: data.job_id,
+        vocals_url: toAbs(data.vocals_url),
+        instrumental_url: toAbs(data.instrumental_url)
+      });
     } catch (err: any) {
       setError(err.message || "Something went wrong");
     } finally {
@@ -59,7 +67,7 @@ export default function App() {
     <div style={styles.page}>
       <div style={styles.card}>
         <h1 style={styles.title}>Vocal Splitter</h1>
-        <p style={styles.subtitle}>Upload an audio file (mp3, wav). We'll split vocals and instrumental.</p>
+        <p style={styles.subtitle}>Upload an audio file (mp3, wav). We&apos;ll split vocals and instrumental.</p>
 
         <div
           style={{
@@ -93,7 +101,7 @@ export default function App() {
               <path d="M9 3v10.55A4 4 0 1 0 11 17V7h6V3H9z"/>
             </svg>
             <div style={styles.dropText}>
-              <strong>Drag & drop</strong> your audio here, or click to browse
+              <strong>Drag &amp; drop</strong> your audio here, or click to browse
             </div>
             {fileName && <div style={styles.fileName}>{fileName}</div>}
           </div>
