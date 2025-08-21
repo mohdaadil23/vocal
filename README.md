@@ -38,6 +38,9 @@ Start the backend:
 uvicorn app.main:app --reload --port 8000 --app-dir backend
 ```
 
+Status/progress endpoint:
+- Check a job status: `GET http://localhost:8000/api/status/{job_id}` returns one of `not_found | running | done`.
+
 In another terminal, start the frontend:
 
 ```
