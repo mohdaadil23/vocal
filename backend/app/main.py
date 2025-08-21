@@ -7,6 +7,7 @@ import subprocess
 import shutil
 import uuid
 import os
+import sys
 
 app = FastAPI(title="Vocal Separation API", version="0.1.0")
 
@@ -30,7 +31,7 @@ app.mount("/files", StaticFiles(directory=str(OUT_DIR)), name="files")
 
 def run_demucs_two_stems(input_path: Path, job_dir: Path) -> Path:
     cmd = [
-        "python",
+        sys.executable,
         "-m",
         "demucs",
         "--two-stems",
